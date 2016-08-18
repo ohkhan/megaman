@@ -37,6 +37,7 @@ from .adjacency import compute_adjacency_matrix
 from .affinity import compute_affinity_matrix
 from .laplacian import compute_laplacian_matrix
 from ..utils.validation import check_array
+from .rmetric import riemann_metric
 
 sparse_formats = ['csr', 'coo', 'lil', 'bsr', 'dok', 'dia']
 distance_error_msg = ("No data matrix exists. "
@@ -314,3 +315,67 @@ class Geometry(object):
 
     def delete_laplacian_matrix(self):
         self.laplacian_matrix = None
+
+    def distortion(self, d, PS=None, nbrs=None, s=None, X=None, n=None):
+        """
+        Parameters
+        ----------
+        X: input data, shape = (n, s)
+        PS: array, shape = (1, n)
+        nbrs: array, shape = (1, n)
+        n: number of data points
+        s: dim of input data
+        d: dim of tangent plane
+
+        Returns
+        -------
+        distortion
+
+        Notes
+        -----
+        todo: Read API, because most (if not all) of these shouldn't have to be parameters.
+        """
+        if X is None:
+            X = self.X
+        if n is None:
+            n = X.shape()[0]
+        if s is None:
+            n = X.shape()[0]
+        if nbrs is None:
+            nbrs = self.compute_neighbors()
+        if PS is None:
+            PS = self.compute_PS()
+        PIK = np.zeros([n, d, s])
+        distortion = 0
+        for i in range(n + 1):  # Since python has 0-based index this should work.
+            p = PS[i]
+            nbr = nbrs[i]
+            Z = (X[nbr, :] - p) - p * (p.transpose() * X[nbr, :])  # bsxfun equivalent
+            sig = Z.transpose() * Z  # No idea what the numpy equivalent of "full()" is.
+            e_vals, e_vecs = np.linalg.eig(sig)
+
+            j = e_vals.argsort()[::-1]  # Returns indices that will sort array from greatest to least.
+            # e_val = e_val[j]
+            e_vec = e_vec[:, j]
+            # evals = np.diag(e_vals)
+            PIK[:, :, i] = e_vec[:, :d]  # Gets d largest eigenvectors.
+            X_tangent = X * e_vec  # Project point onto tangent plane!
+            # Do I want H or one of the other returns?
+            if self.laplacian_matrix is None:
+                self.compute_laplacian_matrix()
+            H = riemann_metric(X_tangent, laplacian= self.laplacian_matrix)[:, :, i]
+            # todo: make/get rmetric function, also figure out what L is (it is in the matlab code)
+            distortion += np.linalg.norm(H - np.eye(d))
+        return distortion / n
+
+    def compute_neighbors(self):
+        if self.affinity_matrix is None:
+            self.compute_affinity_matrix()
+
+        return 0
+
+    def compute_PS(self):
+        if self.affinity_matrix is None:
+            self.compute_affinity_matrix()
+
+        return 0
